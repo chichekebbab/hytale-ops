@@ -87,55 +87,56 @@ function Invoke-HetznerApi {
     }
 
     try {
-        # Use Invoke-WebRequest with SkipHttpErrorCheck (PS 7+) or catch manually
-        # To support both versions safely, we use try/catch but handle the error stream better
-        
-        $Response = $null
-        if ($Body) {
-            $Response = Invoke-WebRequest -Uri $Url -Method $Method -Headers $Headers -Body $JsonBody -ErrorAction Stop
-        } else {
-            $Response = Invoke-WebRequest -Uri $Url -Method $Method -Headers $Headers -ErrorAction Stop
-        }
-        
-        # Parse output
-        return $Response.Content | ConvertFrom-Json
-    } catch {
-        # Catch 4xx/5xx errors
-        if ($_.Exception.Response) {
-            $StatusCode = [int]$_.Exception.Response.StatusCode
+        # Check PowerShell Version
+        if ($PSVersionTable.PSVersion.Major -ge 7) {
+            # Modern PowerShell (Core 7+)
+            # Use SkipHttpErrorCheck to avoid exceptions on 4xx/5xx
+            $Response = Invoke-WebRequest -Uri $Url -Method $Method -Headers $Headers -Body $JsonBody -SkipHttpErrorCheck
             
-            # Read error content reliably
-            $ErrorContent = ""
-            $Stream = $_.Exception.Response.GetResponseStream()
-            if ($Stream) {
-                $Reader = New-Object System.IO.StreamReader($Stream)
-                $ErrorContent = $Reader.ReadToEnd()
-                $Reader.Dispose() # Clean up
-            }
-
-            # Handle 401 Unauthorized
-            if ($StatusCode -eq 401) {
-                Log-Warn "Authentication failed (401 Unauthorized). Removing invalid token..."
-                $global:HetznerToken = $null
-                if (Test-Path $ConfigFile) { Remove-Item $ConfigFile -Force }
-                Check-Token
-                return Invoke-HetznerApi -Method $Method -Uri $Uri -Body $Body
-            }
-
-            Log-Error "API Error ($StatusCode): $($_.Exception.Message)"
-            if (-not [string]::IsNullOrEmpty($ErrorContent)) {
-                # Try to pretty print JSON error
-                try {
-                    $ErrorJson = $ErrorContent | ConvertFrom-Json
-                    Write-Host ($ErrorJson | ConvertTo-Json -Depth 5) -ForegroundColor Red
-                } catch {
-                    Write-Host $ErrorContent -ForegroundColor Red
+            # Check Status Code manually
+            if ($Response.StatusCode -ge 400) {
+                $ErrorContent = $Response.Content
+                
+                # Handle 401 Unauthorized
+                if ($Response.StatusCode -eq 401) {
+                    Log-Warn "Authentication failed (401 Unauthorized). Removing invalid token..."
+                    $global:HetznerToken = $null
+                    if (Test-Path $ConfigFile) { Remove-Item $ConfigFile -Force }
+                    Check-Token
+                    return Invoke-HetznerApi -Method $Method -Uri $Uri -Body $Body
                 }
+                
+                Log-Error "API Error ($($Response.StatusCode))"
+                Write-Host $ErrorContent -ForegroundColor Red
+                exit 1
             }
-            exit 1
+            
+            return $Response.Content | ConvertFrom-Json
         } else {
-            throw $_
+            # Legacy Windows PowerShell (5.1)
+            # Use classic try/catch with WebException
+            if ($Body) {
+                $Response = Invoke-RestMethod -Uri $Url -Method $Method -Headers $Headers -Body $JsonBody -ErrorAction Stop
+            } else {
+                $Response = Invoke-RestMethod -Uri $Url -Method $Method -Headers $Headers -ErrorAction Stop
+            }
+            return $Response
         }
+
+    } catch {
+        # Fallback for unexpected network errors or PS 5.1 HTTP errors
+        Log-Error "Request Failed: $($_.Exception.Message)"
+        if ($_.Exception.Response) {
+             # Attempt to read stream for PS 5.1
+            try {
+                $Stream = $_.Exception.Response.GetResponseStream()
+                $Reader = New-Object System.IO.StreamReader($Stream)
+                Write-Host $Reader.ReadToEnd() -ForegroundColor Red
+            } catch {
+                Write-Host "(Could not read error details)" -ForegroundColor DarkRed
+            }
+        }
+        exit 1
     }
 }
 
