@@ -257,16 +257,20 @@ function Deploy-Server {
         $RetryCount++
         Write-Host -NoNewline "."
         
-        # Test connection strictly
-        # Redirect stderr to stdout to avoid PowerShell thinking it's an error
+        # Test connection by exit code only
+        # We redirect ALL output to $null to keep console clean
+        # If ssh connects and runs 'exit', it returns 0.
         try {
-            $TestSsh = ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$SshKeyPath" root@$ServerIp "echo ready" 2>&1
-            if ($TestSsh -match "ready") {
+            # Use Start-Process to capture exit code reliably without text parsing issues
+            # Or simpler: just run it and check $LASTEXITCODE
+            $Process = Start-Process ssh -ArgumentList "-o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i `"$SshKeyPath`" root@$ServerIp exit" -NoNewWindow -PassThru -Wait
+            
+            if ($Process.ExitCode -eq 0) {
                 $SshReady = $true
                 Write-Host "`n[OK] SSH is UP!" -ForegroundColor Green
             }
         } catch {
-            # Ignore ssh errors during wait loop
+            # Ignore errors
         }
     }
 
