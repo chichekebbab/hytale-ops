@@ -258,11 +258,15 @@ function Deploy-Server {
         Write-Host -NoNewline "."
         
         # Test connection strictly
-        $TestSsh = ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$SshKeyPath" root@$ServerIp "echo ready" 2>$null
-        
-        if ($TestSsh -match "ready") {
-            $SshReady = $true
-            Write-Host "`n[OK] SSH is UP!" -ForegroundColor Green
+        # Redirect stderr to stdout to avoid PowerShell thinking it's an error
+        try {
+            $TestSsh = ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$SshKeyPath" root@$ServerIp "echo ready" 2>&1
+            if ($TestSsh -match "ready") {
+                $SshReady = $true
+                Write-Host "`n[OK] SSH is UP!" -ForegroundColor Green
+            }
+        } catch {
+            # Ignore ssh errors during wait loop
         }
     }
 
