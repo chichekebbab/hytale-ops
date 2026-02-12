@@ -114,7 +114,6 @@ function Invoke-HetznerApi {
             return $Response.Content | ConvertFrom-Json
         } else {
             # Legacy Windows PowerShell (5.1)
-            # Use classic try/catch with WebException
             if ($Body) {
                 $Response = Invoke-RestMethod -Uri $Url -Method $Method -Headers $Headers -Body $JsonBody -ErrorAction Stop
             } else {
@@ -284,7 +283,7 @@ function Deploy-Server {
     }
 
     Log-Info "🔧 Configuring Hytale environment..."
-
+    
     # Create Service File content
     $ServiceFile = @"
 [Unit]
@@ -311,8 +310,7 @@ systemctl daemon-reload
 systemctl enable hytale
 "@
     
-    # Using ssh.exe directly (standard on Win10/11)
-    # We pipe the commands into ssh
+    # Using ssh.exe directly
     $RemoteScript | ssh -o StrictHostKeyChecking=no -i "$SshKeyPath" root@$ServerIp
 
     Write-Host "`n🎉 Deployment complete!" -ForegroundColor Green
