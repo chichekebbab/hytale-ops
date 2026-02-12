@@ -1,18 +1,13 @@
 <#
 .SYNOPSIS
-Hytale Ops CLI (PowerShell Version) - Deploy Hytale Servers on Hetzner
+Hytale Ops CLI (PowerShell Version)
 
 .DESCRIPTION
-Interactive tool to deploy, manage, and connect to Hytale game servers on Hetzner Cloud.
-Zero external dependencies (uses native PowerShell + ssh.exe).
+Deploy Hytale Servers on Hetzner Cloud.
+Zero dependencies.
 
 .EXAMPLE
 .\hytale-ops.ps1
-Run in interactive mode.
-
-.EXAMPLE
-.\hytale-ops.ps1 -Command deploy -Name "my-server"
-Deploy a server named "my-server".
 #>
 
 param (
@@ -22,7 +17,7 @@ param (
 
 $ErrorActionPreference = "Stop"
 
-# --- Configuration ---
+# --- Config ---
 $ConfigDir = "$env:USERPROFILE\.config\hytale-ops"
 $ConfigFile = "$ConfigDir\config.env"
 $SshKeyPath = "$env:USERPROFILE\.ssh\id_rsa"
@@ -55,7 +50,6 @@ function Check-Token {
     if ([string]::IsNullOrEmpty($global:HetznerToken)) {
         Write-Host "🔑 Hetzner API Token not found."
         $global:HetznerToken = Read-Host -Prompt "Paste your HCloud API Token" -AsSecureString
-        # Convert SecureString back to plain text for API usage (local only)
         $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($global:HetznerToken)
         $global:HetznerToken = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
         
@@ -68,7 +62,7 @@ function Check-Token {
     }
 }
 
-function Invoke-HetznerApi {
+function Call-Hetzner {
     param(
         [string]$Method = "GET",
         [string]$Uri,
@@ -94,15 +88,13 @@ function Invoke-HetznerApi {
         }
         return $Response
     } catch {
-        Log-Error "API Request Failed: $($_.Exception.Message)"
+        Log-Error "Request Failed: $($_.Exception.Message)"
         if ($_.Exception.Response) {
             try {
                 $Stream = $_.Exception.Response.GetResponseStream()
                 $Reader = New-Object System.IO.StreamReader($Stream)
                 Write-Host $Reader.ReadToEnd() -ForegroundColor Red
-            } catch {
-                # Ignore read errors on failure
-            }
+            } catch { }
         }
         exit 1
     }
@@ -117,98 +109,72 @@ function Deploy-Server {
     Check-Token
 
     if ([string]::IsNullOrEmpty($ServerName)) {
-        $ServerName = Read-Host "🏷️  Enter Server Name (e.g., hytale-smp)"
+        $ServerName = Read-Host "🏷️  Enter Server Name"
         if ([string]::IsNullOrEmpty($ServerName)) { Log-Error "Name is required."; exit 1 }
     }
 
     # Select Type
-    Write-Host "`n🖥️  Select Server Type (CPU / RAM / Price / Capacity):"
-    Write-Host "1) cx23   (2 vCPU / 4GB RAM  / ~5€/mo  / ~1-5 Players)"
-    Write-Host "2) cpx21  (3 vCPU / 4GB RAM  / ~8€/mo  / ~5-10 Players - Recommended)"
-    Write-Host "3) cpx31  (4 vCPU / 8GB RAM  / ~14€/mo / ~10-20 Players)"
-    Write-Host "4) cpx41  (8 vCPU / 16GB RAM / ~26€/mo / ~20-50 Players)"
-    $TypeChoice = Read-Host "Choose an option [1-4]"
+    Write-Host "`n🖥️  Select Server Type:"
+    Write-Host "1) cx23   (2 vCPU / 4GB RAM  / ~5€/mo)"
+    Write-Host "2) cpx21  (3 vCPU / 4GB RAM  / ~8€/mo)"
+    $TypeChoice = Read-Host "Choose [1-2]"
     
     $ServerType = switch ($TypeChoice) {
         "1" { "cx23" }
         "2" { "cpx21" }
-        "3" { "cpx31" }
-        "4" { "cpx41" }
         Default { "cpx21" }
     }
     Write-Host "Selected: $ServerType" -ForegroundColor Yellow
 
     # Select Location
-    Write-Host "`n🌍 Select Data Center Location:"
-    Write-Host "1) Nuremberg, Germany (nbg1)"
-    Write-Host "2) Falkenstein, Germany (fsn1)"
-    Write-Host "3) Helsinki, Finland (hel1)"
-    Write-Host "4) Ashburn, USA (ash)"
-    Write-Host "5) Hillsboro, USA (hil)"
-    $LocChoice = Read-Host "Choose an option [1-5]"
+    Write-Host "`n🌍 Select Location:"
+    Write-Host "1) Nuremberg (nbg1)"
+    Write-Host "2) Falkenstein (fsn1)"
+    $LocChoice = Read-Host "Choose [1-2]"
 
     $Location = switch ($LocChoice) {
         "1" { "nbg1" }
         "2" { "fsn1" }
-        "3" { "hel1" }
-        "4" { "ash" }
-        "5" { "hil" }
         Default { "nbg1" }
     }
     Write-Host "Selected: $Location" -ForegroundColor Yellow
 
-    Log-Info "Deploying Hytale Server: $ServerName ($ServerType in $Location)..."
+    Log-Info "Deploying $ServerName ($ServerType in $Location)..."
 
     # SSH Key Check
     if (-not (Test-Path $SshKeyPath)) {
-        Log-Error "SSH key not found at $SshKeyPath. Please run 'ssh-keygen' first."
+        Log-Error "SSH key not found at $SshKeyPath."
         exit 1
     }
 
     # Check/Upload SSH Key
-    Log-Info "Verifying SSH Key on Hetzner..."
-    $Keys = Invoke-HetznerApi -Uri "/ssh_keys?name=$SshKeyName"
+    Log-Info "Checking SSH Key..."
+    $Keys = Call-Hetzner -Uri "/ssh_keys?name=$SshKeyName"
     $SshKeyId = $null
     
     if ($Keys.ssh_keys.Count -eq 0) {
-        Log-Warn "SSH Key '$SshKeyName' not found on Hetzner. Uploading..."
-        
-        $PubPath = "$SshKeyPath.pub"
-        if (-not (Test-Path $PubPath)) {
-            Log-Error "Public key not found at $PubPath. Please generate one with 'ssh-keygen'."
-            exit 1
-        }
-        
-        $PubKeyContent = Get-Content $PubPath -Raw
-        $KeyBody = @{
-            name = $SshKeyName
-            public_key = $PubKeyContent
-        }
-        
-        $NewKey = Invoke-HetznerApi -Method "POST" -Uri "/ssh_keys" -Body $KeyBody
+        Log-Warn "Key '$SshKeyName' missing. Uploading..."
+        $PubKeyContent = Get-Content "$SshKeyPath.pub" -Raw
+        $KeyBody = @{ name = $SshKeyName; public_key = $PubKeyContent }
+        $NewKey = Call-Hetzner -Method "POST" -Uri "/ssh_keys" -Body $KeyBody
         $SshKeyId = $NewKey.ssh_key.id
-        Log-Success "SSH Key uploaded successfully (ID: $SshKeyId)."
+        Log-Success "Key uploaded (ID: $SshKeyId)."
     } else {
         $SshKeyId = $Keys.ssh_keys[0].id
-        Log-Success "SSH Key '$SshKeyName' found (ID: $SshKeyId)."
+        Log-Success "Key found (ID: $SshKeyId)."
     }
 
     # Check existence
-    $Existing = Invoke-HetznerApi -Uri "/servers?name=$ServerName"
+    $Existing = Call-Hetzner -Uri "/servers?name=$ServerName"
     if ($Existing.servers.Count -gt 0) {
-        Log-Warn "Server '$ServerName' already exists (IP: $($Existing.servers[0].public_net.ipv4.ip))."
+        Log-Warn "Server exists (IP: $($Existing.servers[0].public_net.ipv4.ip))."
         $ServerIp = $Existing.servers[0].public_net.ipv4.ip
         
-        $Confirm = Read-Host "Do you want to re-run the installation/configuration on this server? (y/n)"
-        if ($Confirm -ne "y") {
-            Log-Info "Skipping installation."
-            return
-        }
+        $Confirm = Read-Host "Re-run configuration? (y/n)"
+        if ($Confirm -ne "y") { return }
     } else {
-        Log-Info "📦 Provisioning VPS on Hetzner..."
-        
+        Log-Info "Provisioning VPS..."
         $UserData = "#cloud-config`npackages:`n - openjdk-25-jre-headless`n - ufw`nruncmd:`n - ufw allow 22/tcp`n - ufw allow 25565/tcp`n - useradd -m -s /bin/bash hytale"
-        
         $Body = @{
             name = $ServerName
             server_type = $ServerType
@@ -217,16 +183,13 @@ function Deploy-Server {
             ssh_keys = @($SshKeyId)
             user_data = $UserData
         }
-
-        $Result = Invoke-HetznerApi -Method "POST" -Uri "/servers" -Body $Body
+        $Result = Call-Hetzner -Method "POST" -Uri "/servers" -Body $Body
         $ServerIp = $Result.server.public_net.ipv4.ip
-        Log-Success "Server created at $ServerIp."
+        Log-Success "Server created: $ServerIp"
     }
 
-    Log-Info "⏳ Waiting for SSH to become available (this may take 1-2 minutes)..."
-    
-    # Retry loop for SSH
-    $MaxRetries = 20
+    Log-Info "Waiting for SSH..."
+    $MaxRetries = 30
     $RetryCount = 0
     $SshReady = $false
 
@@ -234,43 +197,29 @@ function Deploy-Server {
         Start-Sleep -Seconds 10
         $RetryCount++
         Write-Host -NoNewline "."
-        
-        # Test connection strictly (ConnectTimeout=5)
-        # We redirect stderr to null to avoid ugly messages during checks
         $TestSsh = ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$SshKeyPath" root@$ServerIp "echo ready" 2>$null
-        
-        if ($TestSsh -match "ready") {
-            $SshReady = $true
-            Write-Host "`n✅ SSH is UP!" -ForegroundColor Green
-        }
+        if ($TestSsh -match "ready") { $SshReady = $true; Write-Host "`n✅ SSH UP!" -ForegroundColor Green }
     }
 
     if (-not $SshReady) {
-        Log-Error "SSH Timed out after $($MaxRetries * 10) seconds. The server might still be booting."
-        Log-Error "Try running 'ssh root@$ServerIp' manually later."
+        Log-Error "SSH Timeout."
         exit 1
     }
 
-    Log-Info "🔧 Configuring Hytale environment..."
-    
-    # Create Service File content
+    Log-Info "Configuring..."
     $ServiceFile = @"
 [Unit]
 Description=Hytale Server
 After=network.target
-
 [Service]
 User=hytale
 WorkingDirectory=/opt/hytale
 ExecStart=/usr/bin/java -Xmx4G -jar hytale-server.jar
 Restart=always
-
 [Install]
 WantedBy=multi-user.target
 "@
 
-    # Remote Setup via SSH
-    # Note: We use a Here-String for the remote script
     $RemoteScript = @"
 mkdir -p /opt/hytale
 chown hytale:hytale /opt/hytale
@@ -279,80 +228,49 @@ systemctl daemon-reload
 systemctl enable hytale
 "@
     
-    # Using ssh.exe directly
     $RemoteScript | ssh -o StrictHostKeyChecking=no -i "$SshKeyPath" root@$ServerIp
-
-    Write-Host "`n🎉 Deployment complete!" -ForegroundColor Green
-    Write-Host "   Server Name: $ServerName" -ForegroundColor Yellow
-    Write-Host "   IP Address:  $ServerIp" -ForegroundColor Yellow
-    Write-Host "`n👉 To connect via SSH:"
-    Write-Host "   ssh -i $SshKeyPath root@$ServerIp" -ForegroundColor Green
-    Write-Host "`n👉 Or use this tool:"
-    Write-Host "   .\hytale-ops.ps1 ssh $ServerName" -ForegroundColor Green
+    Write-Host "`n🎉 Done! IP: $ServerIp" -ForegroundColor Green
 }
 
 function Get-Status {
     param([string]$ServerName)
     Load-Config
     Check-Token
-
-    if ([string]::IsNullOrEmpty($ServerName)) {
-        $ServerName = Read-Host "🔍 Enter Server Name to check"
-    }
-
-    Log-Info "Checking status for $ServerName..."
-    $Result = Invoke-HetznerApi -Uri "/servers?name=$ServerName"
-
-    if ($Result.servers.Count -eq 0) {
-        Log-Error "Server not found."
-        return
-    }
-
+    if ([string]::IsNullOrEmpty($ServerName)) { $ServerName = Read-Host "Server Name" }
+    $Result = Call-Hetzner -Uri "/servers?name=$ServerName"
+    if ($Result.servers.Count -eq 0) { Log-Error "Not found."; return }
     $Server = $Result.servers[0]
-    Write-Host "`nServer: $($Server.name)" -ForegroundColor Yellow
-    Write-Host "ID:     $($Server.id)"
-    Write-Host "Status: $($Server.status)" -ForegroundColor Green
-    Write-Host "IP:     $($Server.public_net.ipv4.ip)" -ForegroundColor Cyan
-    Write-Host "Type:   $($Server.server_type.name)"
+    Write-Host "Status: $($Server.status) | IP: $($Server.public_net.ipv4.ip)" -ForegroundColor Green
 }
 
 function Connect-Ssh {
     param([string]$ServerName)
     Load-Config
     Check-Token
-
-    if ([string]::IsNullOrEmpty($ServerName)) {
-        $ServerName = Read-Host "🔌 Enter Server Name to connect"
-    }
-
-    $Result = Invoke-HetznerApi -Uri "/servers?name=$ServerName"
-    if ($Result.servers.Count -eq 0) { Log-Error "Server not found."; exit 1 }
-    
+    if ([string]::IsNullOrEmpty($ServerName)) { $ServerName = Read-Host "Server Name" }
+    $Result = Call-Hetzner -Uri "/servers?name=$ServerName"
+    if ($Result.servers.Count -eq 0) { Log-Error "Not found."; exit 1 }
     $Ip = $Result.servers[0].public_net.ipv4.ip
-    Log-Info "Connecting to $ServerName ($Ip)..."
     ssh -o StrictHostKeyChecking=no -i "$SshKeyPath" root@$Ip
 }
 
-# --- Main Dispatch ---
+# --- Main ---
 
 if ([string]::IsNullOrEmpty($Command)) {
-    Write-Host "Hytale Ops CLI (PowerShell)" -ForegroundColor Cyan
-    Write-Host "1) Deploy New Server"
-    Write-Host "2) Check Status"
-    Write-Host "3) SSH Connect"
-    $Action = Read-Host "Choose an action [1-3]"
-    
+    Write-Host "Hytale Ops CLI" -ForegroundColor Cyan
+    Write-Host "1) Deploy"
+    Write-Host "2) Status"
+    Write-Host "3) SSH"
+    $Action = Read-Host "Option"
     switch ($Action) {
         "1" { Deploy-Server }
         "2" { Get-Status }
         "3" { Connect-Ssh }
-        Default { Write-Host "Invalid option." }
     }
 } else {
     switch ($Command) {
         "deploy" { Deploy-Server -ServerName $Name }
         "status" { Get-Status -ServerName $Name }
         "ssh"    { Connect-Ssh -ServerName $Name }
-        Default  { Write-Host "Unknown command: $Command" }
     }
 }
