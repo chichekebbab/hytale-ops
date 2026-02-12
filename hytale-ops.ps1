@@ -89,10 +89,18 @@ function Invoke-HetznerApi {
         }
     } catch {
         Log-Error "API Error: $($_.Exception.Message)"
+        
+        # PowerShell 7 (Core) vs Windows PowerShell (5.1) compatibility
         if ($_.Exception.Response) {
-            $Stream = $_.Exception.Response.GetResponseStream()
-            $Reader = New-Object System.IO.StreamReader($Stream)
-            Write-Host $Reader.ReadToEnd() -ForegroundColor Red
+            if ($_.Exception.Response.GetType().Name -eq "HttpResponseMessage") {
+                # PowerShell Core / 7+ (HttpClient based)
+                Write-Host $_.Exception.Response.Content.ReadAsStringAsync().Result -ForegroundColor Red
+            } elseif ($_.Exception.Response.GetResponseStream) {
+                # Windows PowerShell 5.1 (WebClient based)
+                $Stream = $_.Exception.Response.GetResponseStream()
+                $Reader = New-Object System.IO.StreamReader($Stream)
+                Write-Host $Reader.ReadToEnd() -ForegroundColor Red
+            }
         }
         exit 1
     }
