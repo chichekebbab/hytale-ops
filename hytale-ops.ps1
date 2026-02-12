@@ -192,9 +192,10 @@ function Deploy-Server {
     # Check/Upload SSH Key
     Log-Info "Verifying SSH Key on Hetzner..."
     $Keys = Invoke-HetznerApi -Uri "/ssh_keys?name=$SshKeyName"
+    $SshKeyId = $null
     
     if ($Keys.ssh_keys.Count -eq 0) {
-        Log-Warn "SSH Key '$SshKeyName' not found on Hetzner."
+        Log-Warn "SSH Key '$SshKeyName' not found on Hetzner. Uploading..."
         
         $PubPath = "$SshKeyPath.pub"
         if (-not (Test-Path $PubPath)) {
@@ -202,17 +203,18 @@ function Deploy-Server {
             exit 1
         }
         
-        Log-Info "Uploading local public key..."
         $PubKeyContent = Get-Content $PubPath -Raw
         $KeyBody = @{
             name = $SshKeyName
             public_key = $PubKeyContent
         }
         
-        Invoke-HetznerApi -Method "POST" -Uri "/ssh_keys" -Body $KeyBody
-        Log-Success "SSH Key uploaded successfully."
+        $NewKey = Invoke-HetznerApi -Method "POST" -Uri "/ssh_keys" -Body $KeyBody
+        $SshKeyId = $NewKey.ssh_key.id
+        Log-Success "SSH Key uploaded successfully (ID: $SshKeyId)."
     } else {
-        Log-Success "SSH Key '$SshKeyName' found on Hetzner."
+        $SshKeyId = $Keys.ssh_keys[0].id
+        Log-Success "SSH Key '$SshKeyName' found (ID: $SshKeyId)."
     }
 
     # Check existence
@@ -230,7 +232,7 @@ function Deploy-Server {
             server_type = $ServerType
             image = $DefaultImage
             location = $Location
-            ssh_keys = @($SshKeyName)
+            ssh_keys = @($SshKeyId)
             user_data = $UserData
         }
 
