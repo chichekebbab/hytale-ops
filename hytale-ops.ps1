@@ -88,31 +88,45 @@ function Invoke-HetznerApi {
             Invoke-RestMethod -Uri "https://api.hetzner.cloud/v1$Uri" -Method $Method -Headers $Headers
         }
     } catch {
-        if ($_.Exception.Response.StatusCode -eq [System.Net.HttpStatusCode]::Unauthorized) {
-            Log-Warn "Authentication failed (401 Unauthorized). Removing invalid token..."
-            $global:HetznerToken = $null
-            if (Test-Path $ConfigFile) { Remove-Item $ConfigFile -Force }
-            
-            # Retry logic: ask for new token
-            Check-Token
-            
-            # Re-run the API call with new token (simple retry)
-            return Invoke-HetznerApi -Method $Method -Uri $Uri -Body $Body
-        }
-
-        Log-Error "API Error: $($_.Exception.Message)"
+        # Capture error details immediately
+        $ErrorMessage = $_.Exception.Message
+        $ErrorContent = ""
         
-        # PowerShell 7 (Core) vs Windows PowerShell (5.1) compatibility
         if ($_.Exception.Response) {
+             # Read content based on PS version
             if ($_.Exception.Response.GetType().Name -eq "HttpResponseMessage") {
                 # PowerShell Core / 7+ (HttpClient based)
-                Write-Host $_.Exception.Response.Content.ReadAsStringAsync().Result -ForegroundColor Red
+                # Need to read content before disposing
+                try {
+                    $ErrorContent = $_.Exception.Response.Content.ReadAsStringAsync().Result
+                } catch {
+                    $ErrorContent = "(Could not read error content)"
+                }
             } elseif ($_.Exception.Response.GetResponseStream) {
                 # Windows PowerShell 5.1 (WebClient based)
                 $Stream = $_.Exception.Response.GetResponseStream()
                 $Reader = New-Object System.IO.StreamReader($Stream)
-                Write-Host $Reader.ReadToEnd() -ForegroundColor Red
+                $ErrorContent = $Reader.ReadToEnd()
             }
+            
+            # Auto-retry on 401 Unauthorized
+            if ($_.Exception.Response.StatusCode -eq [System.Net.HttpStatusCode]::Unauthorized) {
+                Log-Warn "Authentication failed (401 Unauthorized). Removing invalid token..."
+                $global:HetznerToken = $null
+                if (Test-Path $ConfigFile) { Remove-Item $ConfigFile -Force }
+                
+                # Retry logic: ask for new token
+                Check-Token
+                
+                # Re-run the API call with new token (simple retry)
+                # Note: Recursion risk if new token also fails 401
+                return Invoke-HetznerApi -Method $Method -Uri $Uri -Body $Body
+            }
+        }
+
+        Log-Error "API Error: $ErrorMessage"
+        if (-not [string]::IsNullOrEmpty($ErrorContent)) {
+            Write-Host $ErrorContent -ForegroundColor Red
         }
         exit 1
     }
