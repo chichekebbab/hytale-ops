@@ -177,6 +177,7 @@ function Deploy-Server {
             $P = Start-Process ssh -ArgumentList "-o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i `"$SshKeyPath`" root@$ServerIp exit" -NoNewWindow -PassThru -Wait
             if ($P.ExitCode -eq 0) { $SshReady = $true; Write-Host " [Ready]" -ForegroundColor Green }
         } catch {}
+        $RetryCount++
     }
     if (-not $SshReady) { Log-Error "SSH Timeout."; exit 1 }
 
@@ -309,6 +310,7 @@ function Get-Status {
 
 function Connect-Ssh {
     param([string]$ServerName)
+    Show-Banner
     Load-Config
     Check-Token
     if ([string]::IsNullOrEmpty($ServerName)) { $ServerName = Read-Host "  > Server Name" }
