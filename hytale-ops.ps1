@@ -283,6 +283,7 @@ function Deploy-Server {
     Log-Info "Configuring Hytale environment..."
     
     # Create Service File content
+    # Note: We enforce LF line endings for Linux compatibility
     $ServiceFile = @"
 [Unit]
 Description=Hytale Server
@@ -296,17 +297,17 @@ Restart=always
 
 [Install]
 WantedBy=multi-user.target
-"@
+"@ -replace "`r`n", "`n"
 
     # Remote Setup via SSH
-    # Note: We use a Here-String for the remote script
+    # Note: We use a Here-String for the remote script and remove Windows CRLF
     $RemoteScript = @"
 mkdir -p /opt/hytale
 chown hytale:hytale /opt/hytale
 echo '$ServiceFile' > /etc/systemd/system/hytale.service
 systemctl daemon-reload
 systemctl enable hytale
-"@
+"@ -replace "`r`n", "`n"
     
     # Using ssh.exe directly
     $RemoteScript | ssh -o StrictHostKeyChecking=no -i "$SshKeyPath" root@$ServerIp
