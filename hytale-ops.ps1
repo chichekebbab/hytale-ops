@@ -243,7 +243,12 @@ systemctl status hytale --no-pager
     $Bytes = [System.Text.Encoding]::UTF8.GetBytes($RemoteScript)
     $B64 = [Convert]::ToBase64String($Bytes)
     ssh -o StrictHostKeyChecking=no -i "$SshKeyPath" root@$ServerIp "echo $B64 | base64 -d | bash"
-    Log-Success "Done! Connect: ssh root@$ServerIp"
+    
+    Write-Host "`n[OK] Deployment complete!" -ForegroundColor Green
+    Write-Host "   Server Name: $ServerName" -ForegroundColor Yellow
+    Write-Host "   Address:     $ServerIp:5520" -ForegroundColor Yellow
+    Write-Host "`nTo connect via SSH:"
+    Write-Host "   ssh -i $SshKeyPath root@$ServerIp" -ForegroundColor Green
 }
 
 function Update-Server {
@@ -278,7 +283,7 @@ systemctl status hytale --no-pager
     $Bytes = [System.Text.Encoding]::UTF8.GetBytes($UpdateScript)
     $B64 = [Convert]::ToBase64String($Bytes)
     ssh -o StrictHostKeyChecking=no -i "$SshKeyPath" root@$Ip "echo $B64 | base64 -d | bash"
-    Log-Success "Update complete!"
+    Log-Success "Update complete! Server running on port 5520."
 }
 
 function Get-Status {
@@ -289,7 +294,7 @@ function Get-Status {
     $Result = Invoke-HetznerApi -Uri "/servers?name=$ServerName"
     if ($Result.servers.Count -eq 0) { Log-Error "Not found."; return }
     $S = $Result.servers[0]
-    Write-Host "Status: $($S.status) | IP: $($S.public_net.ipv4.ip)" -ForegroundColor Green
+    Write-Host "Status: $($S.status) | Address: $($S.public_net.ipv4.ip):5520" -ForegroundColor Green
 }
 
 function Connect-Ssh {
