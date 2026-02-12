@@ -155,14 +155,14 @@ function Deploy-Server {
 
     # Select Type
     Write-Host "`n🖥️  Select Server Type (CPU / RAM / Price / Capacity):"
-    Write-Host "1) cx22   (2 vCPU / 4GB RAM  / ~4€/mo  / ~1-5 Players)"
+    Write-Host "1) cx23   (2 vCPU / 4GB RAM  / ~5€/mo  / ~1-5 Players)"
     Write-Host "2) cpx21  (3 vCPU / 4GB RAM  / ~8€/mo  / ~5-10 Players - Recommended)"
     Write-Host "3) cpx31  (4 vCPU / 8GB RAM  / ~14€/mo / ~10-20 Players)"
     Write-Host "4) cpx41  (8 vCPU / 16GB RAM / ~26€/mo / ~20-50 Players)"
     $TypeChoice = Read-Host "Choose an option [1-4]"
     
     $ServerType = switch ($TypeChoice) {
-        "1" { "cx22" }
+        "1" { "cx23" }
         "2" { "cpx21" }
         "3" { "cpx31" }
         "4" { "cpx41" }
