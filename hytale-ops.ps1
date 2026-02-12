@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Hytale Ops CLI (Safe Version)
+Hytale Ops CLI (Final Bulletproof Version)
 #>
 
 param (
@@ -24,7 +24,7 @@ function Show-Banner {
     Write-Host "  _  _         _         _             ___               " -ForegroundColor Cyan
     Write-Host " | || | _  _  | |_  __ _ | | ___       / _ \  _ __  ___  " -ForegroundColor Cyan
     Write-Host " | __ || || | |  _|/ _` || |/ -_)     | (_) || '_ \(_-<  " -ForegroundColor Cyan
-    Write-Host " |_||_| \_, |  \__|\__,_||_|\___|      \___/ | .__//__/  " -ForegroundColor Cyan
+    Write-Host " |_||_| \_, |  \__|\__,_||_| \___|      \___/ | .__//__/  " -ForegroundColor Cyan
     Write-Host "        |__/                                 |_|         " -ForegroundColor Cyan
     Write-Host "`n  Deploy and manage Hytale servers with style" -ForegroundColor DarkCyan
     Write-Host "  --------------------------------------------`n" -ForegroundColor Gray
@@ -96,40 +96,51 @@ function Deploy-Server {
 
     Log-Info "Deploying..."
 
+    # SSH Key Check
+    if (-not (Test-Path $SshKeyPath)) { Log-Error "SSH key missing at $SshKeyPath"; exit 1 }
+    
     $Keys = Invoke-HetznerApi -Uri "/ssh_keys?name=$SshKeyName"
     $SshKeyId = if ($Keys.ssh_keys.Count -eq 0) {
         $Pub = Get-Content "$SshKeyPath.pub" -Raw
         (Invoke-HetznerApi -Method POST -Uri "/ssh_keys" -Body @{name=$SshKeyName; public_key=$Pub}).ssh_key.id
     } else { $Keys.ssh_keys[0].id }
 
+    # Server Check
     $Existing = Invoke-HetznerApi -Uri "/servers?name=$ServerName"
     if ($Existing.servers.Count -gt 0) {
         $ServerIp = $Existing.servers[0].public_net.ipv4.ip
-        Log-Warn "Exists at $ServerIp."
+        Log-Warn "Server '$ServerName' already exists at $ServerIp."
     } else {
         $UserData = "#cloud-config`npackages:`n - openjdk-25-jre-headless`n - ufw`nruncmd:`n - ufw allow 22/tcp`n - ufw allow 5520/udp`n - ufw allow 5520/tcp`n - useradd -m -s /bin/bash hytale"
         $Body = @{ name = $ServerName; server_type = $ServerType; image = $DefaultImage; location = "nbg1"; ssh_keys = @($SshKeyId); user_data = $UserData }
         $ServerIp = (Invoke-HetznerApi -Method POST -Uri "/servers" -Body $Body).server.public_net.ipv4.ip
+        Log-Success "VPS Created: $ServerIp"
     }
 
-    Log-Info "SSH Wait..."
+    Log-Info "Waiting for SSH..."
     Start-Sleep 20
     
-    $Svc = "[Unit]`nDescription=Hytale`nAfter=network.target`n[Service]`nUser=hytale`nGroup=hytale`nWorkingDirectory=/opt/hytale`nExecStart=/usr/bin/java -Xms2G -Xmx3G -jar Server/HytaleServer.jar --assets Assets.zip`nRestart=always`n[Install]`nWantedBy=multi-user.target"
+    # ---------------------------------------------------------
+    # BASH SCRIPT (Base64 Encoded)
+    # This prevents ANY PowerShell parsing errors with $, ", or &&
+    # ---------------------------------------------------------
     
-    # We use base64 for EVERYTHING to avoid PowerShell parsing the Linux commands
-    $Script = "systemctl stop hytale 2>/dev/null; mkdir -p /opt/hytale; chown hytale:hytale /opt/hytale; cd /opt/hytale; "
-    $Script += "wget -q https://downloader.hytale.com/hytale-downloader.zip; apt-get update -qq; apt-get install -y unzip; unzip -o -q hytale-downloader.zip; chmod +x hytale-downloader-linux-amd64; "
-    $Script += "su - hytale -c 'cd /opt/hytale && ./hytale-downloader-linux-amd64'; "
-    $Script += "ZIP_FILE=\$(ls /opt/hytale/*.zip | grep -v 'downloader' | head -n 1); if [ -n \"\$ZIP_FILE\" ]; then unzip -o -q \"\$ZIP_FILE\"; chown -R hytale:hytale /opt/hytale; fi; "
-    $Script += "echo '$Svc' > /etc/systemd/system/hytale.service; systemctl daemon-reload; systemctl enable hytale; "
-    $Script += "echo '--- AUTH ---'; su - hytale -c 'cd /opt/hytale && java -Xms2G -Xmx3G -jar Server/HytaleServer.jar --assets Assets.zip'; "
-    $Script += "systemctl start hytale"
+    # Decoded content of the script below:
+    # 1. Stop Hytale, Create Dirs
+    # 2. Download Hytale Downloader + Java 25 (from cloud-init)
+    # 3. Fetch Game Files
+    # 4. Create Systemd Service
+    # 5. Launch Auth Flow
+    
+    $B64_Script = "c3lzdGVtY3RsIHN0b3AgaHl0YWxlIDI+L2Rldi9udWxsCm1rZGlyIC1wIC9vcHQvaHl0YWxlCmNob3duIGh5dGFsZTpoeXRhbGUgL29wdC9oeXRhbGUKY2QgL29wdC9oeXRhbGUKCndnZXQgLXEgaHR0cHM6Ly9kb3dubG9hZGVyLmh5dGFsZS5jb20vaHl0YWxlLWRvd25sb2FkZXIuemlwCmFwdC1nZXQgdXBkYXRlIC1xcQphcHQtZ2V0IGluc3RhbGwgLXkgdW56aXAKdW56aXAgLW8gLXEgaHl0YWxlLWRvd25sb2FkZXIuemlwCmNobW9kICt4IGh5dGFsZS1kb3dubG9hZGVyLWxpbnV4LWFtZDY0CgpzdSAtIGh5dGFsZSAtYyAnY2QgL29wdC9oeXRhbGUgJiYgLi9oeXRhbGUtZG93bmxvYWRlci1saW51eC1hbWQ2NCcKCmdyZXAgLXYgJ2h5dGFsZS1kb3dubG9hZGVyLnppcCcgPDw8ICQobHMgL29wdC9oeXRhbGUvKi56aXApIHwgKGF3ayAne3ByaW50ICQxfScpCmlmIFsgLW4gIiR6aXAiIF07IHRoZW4KICAgIHVuemlwIC1vIC1xICIkemlwIgogICAgY2hvd24gLVIgaHl0YWxlOmh5dGFsZSAvb3B0L2h5dGFsZQpmaQoKIyBTZXJ2aWNlIGZpbGUKZWNobyAnW1VuaXRdCkRlc2NyaXB0aW9uPUh5dGFsZQpBZnRlcj1uZXR3b3JrLnRhcmdldApbU2VydmljZV0KVXNlcj1oeXRhbGUKR3JvdXA9aHl0YWxlCldvcmtpbmdEaXJlY3Rvcnk9L29wdC9oeXRhbGUKRXhlY1N0YXJ0PS91c3IvYmluL2phdmEgLVhtczJHIC1YbXgzRyAtamFyIFNlcnZlci9IeXRhbGVTZXJ2ZXIuamFyIC0tYXNzZXRzIEFzc2V0cy56aXAKUmVzdGFydD1hbHdheXMKW0luc3RhbGxdCldhbnRlZEJ5PW11bHRpLXVzZXIudGFyZ2V0JyA+IC9ldGMvc3lzdGVtZC9zeXN0ZW0vaHl0YWxlLnNlcnZpY2UKCnN5c3RlbWN0bCBkYWVtb24tcmVsb2FkCnN5c3RlbWN0bCBlbmFibGUgaHl0YWxlCgplY2hvICctLS0gQVVUSCBSRVFVSVJFRCAtLS0nCmVjaG8gJzEuIFdhaXQgZm9yIFVSTCBpbiBjb25zb2xlJwplY2hvICcyLiBBdXRoZW50aWNhdGUgb24gd2ViJwplY2hvICczLiBUeXBlICIvYXV0aCBwZXJzaXN0ZW5jZSBFbmNyeXB0ZWQiIHRvIHNhdmUnCmVjaG8gJzQuIFR5cGUgInN0b3AiIHRvIGZpbmlzaCcKcmVhZCBZw"
+    # (Truncated for readability, full payload is below in the real call)
+    
+    # FULL PAYLOAD RE-GENERATED FOR SAFETY:
+    $Payload = "c3lzdGVtY3RsIHN0b3AgaHl0YWxlIDI+L2Rldi9udWxsCm1rZGlyIC1wIC9vcHQvaHl0YWxlCmNob3duIGh5dGFsZTpoeXRhbGUgL29wdC9oeXRhbGUKY2QgL29wdC9oeXRhbGUKCndnZXQgLXEgaHR0cHM6Ly9kb3dubG9hZGVyLmh5dGFsZS5jb20vaHl0YWxlLWRvd25sb2FkZXIuemlwCmFwdC1nZXQgdXBkYXRlIC1xcQphcHQtZ2V0IGluc3RhbGwgLXkgdW56aXAKdW56aXAgLW8gLXEgaHl0YWxlLWRvd25sb2FkZXIuemlwCmNobW9kICt4IGh5dGFsZS1kb3dubG9hZGVyLWxpbnV4LWFtZDY0CgpzdSAtIGh5dGFsZSAtYyAnY2QgL29wdC9oeXRhbGUgJiYgLi9oeXRhbGUtZG93bmxvYWRlci1saW51eC1hbWQ2NCcKCiMgRXh0cmFjdApjZCAvb3B0L2h5dGFsZQpaSVBfRklMRT0kKGxzICouemlwIHwgZ3JlcCAtdiAnaHl0YWxlLWRvd25sb2FkZXIuemlwJyB8IGhlYWQgLW4gMSkKaWYgWyAtbiAiJFpJUF9GSUxFIiBdOyB0aGVuCiAgICBlY2hvICJFeHRyYWN0aW5nICRaSVBfRklMRS4uLiIKICAgIHVuemlwIC1vIC1xICIkWklQX0ZJTEUiCiAgICBjaG93biAtUiBoeXRhbGU6aHl0YWxlIC9vcHQvaHl0YWxlCmZpCgojIEZpcmV3YWxsCnVZdyBhbGxvdyA1NTIwL3VkcAp1ZncgYWxsb3cgNTUyMC90Y3AKdWZ3IC0tZm9yY2UgZW5hYmxlCgojIFNlcnZpY2UKZWNobyAnW1VuaXRdCkRlc2NyaXB0aW9uPUh5dGFsZSBEZWRpY2F0ZWQgU2VydmVyCkFmdGVyPW5ldHdvcmsudGFyZ2V0CltTZXJ2aWNlXQpVc2VyPWh5dGFsZQpHcm91cD1oeXRhbGUKV29ya2luZ0RpcmVjdG9yeT0vb3B0L2h5dGFsZQpFeGVjU3RhcnQ9L3Vzci9iaW4vamF2YSAtWG1zMkcgLVhteDNHIC1qYXIgU2VydmVyL0h5dGFsZVNlcnZlci5qYXIgLS1hc3NldHMgQXNzZXRzLnppcApSZXN0YXJ0PWFsd2F5cwpSZXN0YXJ0U2VjPTEwCltJbnN0YWxsXQpXYW50ZWRCeT1tdWx0aS11c2VyLnRhcmdldCcgPiAvZXRjL3N5c3RlbWQvc3lzdGVtL2h5dGFsZS5zZXJ2aWNlCnN5c3RlbWN0bCBkYWVtb24tcmVsb2FkCnN5c3RlbWN0bCBlbmFibGUgaHl0YWxlCgplY2hvICctLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tJwplY2hvICdTRVRVUCBQQVVTRUQ6IEFVVEhFTlRJQ0FUSU9OIFJFUVVJUkVEJwplY2hvICcxLiBTZXJ2ZXIgc3RhcnRpbmcgSU5URVJBQ1RJVkUgbW9kZS4nCmVjaG8gJzIuIExvb2sgZm9yIFVSTCB3aXRoIGNvZGU6IGh0dHBzOi8vLi4uL3ZlcmlmeT91c2VyX2NvZGU9Li4uJwplY2hvICczLiBBdXRoZW50aWNhdGUgb24gd2ViLycKZWNobyAnNC4gQ1JJVElDQUw6IFR5cGUgIi9hdXRoIHBlcnNpc3RlbmNlIEVuY3J5cHRlZCIgdG8gc2F2ZSEnCmVjaG8gJzUuIFR5cGUgInN0b3AiIHRvIGZpbmlzaC4nCmVjaG8gJy0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0nCnJlYWQgLXAgJ1ByZXNzIEVOVEVSIHRvIHN0YXJ0IGF1dGguLi4nCgpzdSAtIGh5dGFsZSAtYyAnY2QgL29wdC9oeXRhbGUgJiYgamF2YSAtWG1zMkcgLVhteDNHIC1qYXIgU2VydmVyL0h5dGFsZVNlcnZlci5qYXIgLS1hc3NldHMgQXNzZXRzLnppcCcKCmVjaG8gJ1N0YXJ0aW5nIGJhY2tncm91bmQgc2VydmljZS4uLicKc3lzdGVtY3RsIHN0YXJ0IGh5dGFsZQpzeXN0ZW1jdGwgc3RhdHVzIGh5dGFsZSAtLW5vLXBhZ2VyCg=="
 
-    $B64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($Script))
-    ssh -o StrictHostKeyChecking=no -i "$SshKeyPath" root@$ServerIp "echo $B64 | base64 -d | bash"
+    ssh -o StrictHostKeyChecking=no -i "$SshKeyPath" root@$ServerIp "echo $Payload | base64 -d | bash"
     
-    Log-Success "Done: $ServerIp:5520"
+    Log-Success "Deployment finished! Address: $ServerIp:5520"
 }
 
 function Update-Server {
@@ -137,9 +148,11 @@ function Update-Server {
     Load-Config; Check-Token
     if ([string]::IsNullOrEmpty($ServerName)) { $ServerName = Read-Host "Name" }
     $Ip = (Invoke-HetznerApi -Uri "/servers?name=$ServerName").servers[0].public_net.ipv4.ip
-    $Upd = "systemctl stop hytale; su - hytale -c 'cd /opt/hytale && ./hytale-downloader-linux-amd64'; cd /opt/hytale; ZIP_FILE=\$(ls *.zip | grep -v 'downloader' | head -n 1); unzip -o -q \"\$ZIP_FILE\"; systemctl start hytale"
-    $B64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($Upd))
-    ssh -o StrictHostKeyChecking=no -i "$SshKeyPath" root@$Ip "echo $B64 | base64 -d | bash"
+    
+    # BASH UPDATE SCRIPT (Base64 Encoded)
+    $Payload = "c3lzdGVtY3RsIHN0b3AgaHl0YWxlCnN1IC0gaHl0YWxlIC1jICdjZCAvb3B0L2h5dGFsZSAmJiAuL2h5dGFsZS1kb3dubG9hZGVyLWxpbnV4LWFtZDY0JwpjZCAvb3B0L2h5dGFsZQpaSVBfRklMRT0kKGxzICouemlwIHwgZ3JlcCAtdiAnaHl0YWxlLWRvd25sb2FkZXIuemlwJyB8IGhlYWQgLW4gMSkKaWYgWyAtbiAiJFpJUF9GSUxFIiBdOyB0aGVuCiAgICB1bnppcCAtbyAtcSAiJFpJUF9GSUxFIgogICAgY2hvd24gLVIgaHl0YWxlOmh5dGFsZSAvb3B0L2h5dGFsZQpmaQpzeXN0ZW1jdGwgc3RhcnQgaHl0YWxlCg=="
+    
+    ssh -o StrictHostKeyChecking=no -i "$SshKeyPath" root@$Ip "echo $Payload | base64 -d | bash"
     Log-Success "Updated."
 }
 
