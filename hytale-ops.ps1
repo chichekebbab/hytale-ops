@@ -1,10 +1,6 @@
 <#
 .SYNOPSIS
-Hytale Ops CLI (Enhanced Design) - Deploy Hytale Servers on Hetzner
-
-.DESCRIPTION
-Interactive tool to deploy, manage, and connect to Hytale game servers on Hetzner Cloud.
-Enhanced UI inspired by ClawControl.
+Hytale Ops CLI (Fixed Version)
 #>
 
 param (
@@ -121,8 +117,8 @@ function Deploy-Server {
     }
 
     Write-Host "`n  Available Plans:" -ForegroundColor Gray
-    Write-Host "  1) cx23   (2 vCPU / 4GB RAM)  ~5€/mo" -ForegroundColor White
-    Write-Host "  2) cpx21  (3 vCPU / 4GB RAM)  ~8€/mo" -ForegroundColor White
+    Write-Host "  1) cx23   (2 vCPU / 4GB RAM)  ~5 EUR/mo" -ForegroundColor White
+    Write-Host "  2) cpx21  (3 vCPU / 4GB RAM)  ~8 EUR/mo" -ForegroundColor White
     $TypeChoice = Read-Host "  Choose [1-2]"
     $ServerType = if ($TypeChoice -eq "2") { "cpx21" } else { "cx23" }
 
@@ -218,10 +214,10 @@ su - hytale -c 'cd /opt/hytale && ./hytale-downloader-linux-amd64'
 
 # Extract
 cd /opt/hytale
-ZIP_FILE=`$(ls *.zip | grep -v 'hytale-downloader.zip' | head -n 1)
-if [ -n "`$ZIP_FILE" ]; then
-    echo "Extracting `$ZIP_FILE..."
-    unzip -o -q "`$ZIP_FILE"
+ZIP_FILE=\$(ls *.zip | grep -v 'hytale-downloader.zip' | head -n 1)
+if [ -n "\$ZIP_FILE" ]; then
+    echo "Extracting \$ZIP_FILE..."
+    unzip -o -q "\$ZIP_FILE"
     chown -R hytale:hytale /opt/hytale
 fi
 
@@ -280,9 +276,9 @@ echo 'Downloading updates...'
 su - hytale -c 'cd /opt/hytale && ./hytale-downloader-linux-amd64'
 echo 'Extracting...'
 cd /opt/hytale
-ZIP_FILE=`$(ls *.zip | grep -v 'hytale-downloader.zip' | head -n 1)
-if [ -n "`$ZIP_FILE" ]; then
-    unzip -o -q "`$ZIP_FILE"
+ZIP_FILE=\$(ls *.zip | grep -v 'hytale-downloader.zip' | head -n 1)
+if [ -n "\$ZIP_FILE" ]; then
+    unzip -o -q "\$ZIP_FILE"
     chown -R hytale:hytale /opt/hytale
 fi
 echo 'Restarting...'
