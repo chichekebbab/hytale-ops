@@ -286,13 +286,13 @@ function Deploy-Server {
     # Note: We enforce LF line endings for Linux compatibility
     $ServiceFile = @"
 [Unit]
-Description=Hytale Server
+Description=Minecraft Server (Hytale Placeholder)
 After=network.target
 
 [Service]
 User=hytale
 WorkingDirectory=/opt/hytale
-ExecStart=/usr/bin/java -Xmx4G -jar hytale-server.jar
+ExecStart=/usr/bin/java -Xmx2G -Xms1G -jar server.jar nogui
 Restart=always
 
 [Install]
@@ -304,9 +304,16 @@ WantedBy=multi-user.target
     $RemoteScript = @"
 mkdir -p /opt/hytale
 chown hytale:hytale /opt/hytale
+cd /opt/hytale
+# Download Minecraft 1.21.4 (Temporary Placeholder)
+wget -O server.jar https://piston-data.mojang.com/v1/objects/4707d00eb834b446575d89a61a11b5d548d8c001/server.jar
+echo 'eula=true' > eula.txt
+chown -R hytale:hytale /opt/hytale
+
 echo '$ServiceFile' > /etc/systemd/system/hytale.service
 systemctl daemon-reload
 systemctl enable hytale
+systemctl start hytale
 "@ -replace "`r`n", "`n"
     
     # Encode script to Base64 to bypass PowerShell pipe encoding issues (CRLF)
