@@ -87,60 +87,24 @@ function Invoke-HetznerApi {
     }
 
     try {
-        # Universal call (works on PS 5.1 and 7)
-        # We let it throw on error, and catch it below
-        $Response = $null
         if ($Body) {
             $Response = Invoke-RestMethod -Uri $Url -Method $Method -Headers $Headers -Body $JsonBody -ErrorAction Stop
         } else {
             $Response = Invoke-RestMethod -Uri $Url -Method $Method -Headers $Headers -ErrorAction Stop
         }
         return $Response
-
     } catch {
-        # Error Handling
+        Log-Error "API Request Failed: $($_.Exception.Message)"
         if ($_.Exception.Response) {
-            $StatusCode = [int]$_.Exception.Response.StatusCode
-            
-            # Handle 401 Unauthorized
-            if ($StatusCode -eq 401) {
-                Log-Warn "Authentication failed (401 Unauthorized). Removing invalid token..."
-                $global:HetznerToken = $null
-                if (Test-Path $ConfigFile) { Remove-Item $ConfigFile -Force }
-                Check-Token
-                return Invoke-HetznerApi -Method $Method -Uri $Uri -Body $Body
-            }
-            
-            # Read Error Content
-            $ErrorContent = ""
             try {
-                # Attempt to read stream (Standard .NET)
                 $Stream = $_.Exception.Response.GetResponseStream()
-                if ($Stream) {
-                    $Reader = New-Object System.IO.StreamReader($Stream)
-                    $ErrorContent = $Reader.ReadToEnd()
-                    $Reader.Dispose()
-                }
+                $Reader = New-Object System.IO.StreamReader($Stream)
+                Write-Host $Reader.ReadToEnd() -ForegroundColor Red
             } catch {
-                # Fallback for some PS Core cases where stream is disposed
-                try {
-                    # PS Core specific property if stream fails
-                    $ErrorContent = $_.Exception.Response.Content.ReadAsStringAsync().Result 
-                } catch {
-                    $ErrorContent = "(Could not read error details)"
-                }
+                # Ignore read errors on failure
             }
-
-            Log-Error "API Error ($StatusCode): $($_.Exception.Message)"
-            if (-not [string]::IsNullOrEmpty($ErrorContent)) {
-                Write-Host $ErrorContent -ForegroundColor Red
-            }
-            exit 1
-        } else {
-            # Network/Other Error
-            Log-Error "Request Failed: $($_.Exception.Message)"
-            exit 1
         }
+        exit 1
     }
 }
 
