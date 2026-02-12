@@ -228,8 +228,14 @@ function Deploy-Server {
     # Check existence
     $Existing = Invoke-HetznerApi -Uri "/servers?name=$ServerName"
     if ($Existing.servers.Count -gt 0) {
-        Log-Warn "Server '$ServerName' already exists. Fetching info..."
+        Log-Warn "Server '$ServerName' already exists (IP: $($Existing.servers[0].public_net.ipv4.ip))."
         $ServerIp = $Existing.servers[0].public_net.ipv4.ip
+        
+        $Confirm = Read-Host "Do you want to re-run the installation/configuration on this server? (y/n)"
+        if ($Confirm -ne "y") {
+            Log-Info "Skipping installation."
+            return
+        }
     } else {
         Log-Info "📦 Provisioning VPS on Hetzner..."
         
@@ -246,9 +252,35 @@ function Deploy-Server {
 
         $Result = Invoke-HetznerApi -Method "POST" -Uri "/servers" -Body $Body
         $ServerIp = $Result.server.public_net.ipv4.ip
+        Log-Success "Server created at $ServerIp."
+    }
+
+    Log-Info "⏳ Waiting for SSH to become available (this may take 1-2 minutes)..."
+    
+    # Retry loop for SSH
+    $MaxRetries = 20
+    $RetryCount = 0
+    $SshReady = $false
+
+    while (-not $SshReady -and $RetryCount -lt $MaxRetries) {
+        Start-Sleep -Seconds 10
+        $RetryCount++
+        Write-Host -NoNewline "."
         
-        Log-Success "Server created at $ServerIp. Waiting for SSH (approx 30s)..."
-        Start-Sleep -Seconds 30
+        # Test connection strictly (ConnectTimeout=5)
+        # We redirect stderr to null to avoid ugly messages during checks
+        $TestSsh = ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$SshKeyPath" root@$ServerIp "echo ready" 2>$null
+        
+        if ($TestSsh -match "ready") {
+            $SshReady = $true
+            Write-Host "`n✅ SSH is UP!" -ForegroundColor Green
+        }
+    }
+
+    if (-not $SshReady) {
+        Log-Error "SSH Timed out after $($MaxRetries * 10) seconds. The server might still be booting."
+        Log-Error "Try running 'ssh root@$ServerIp' manually later."
+        exit 1
     }
 
     Log-Info "🔧 Configuring Hytale environment..."
