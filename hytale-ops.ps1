@@ -323,7 +323,7 @@ chmod +x hytale-downloader-linux-amd64
 
 # 4. Fetch Game Files
 echo 'Fetching Game Files (this takes time)...'
-su - hytale -c 'cd /opt/hytale && ./hytale-downloader-linux-amd64 --auto-update'
+su - hytale -c 'cd /opt/hytale && ./hytale-downloader-linux-amd64'
 
 # 5. Extract Version Zip (Find the zip downloaded by the tool)
 cd /opt/hytale
