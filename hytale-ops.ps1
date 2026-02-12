@@ -88,6 +88,18 @@ function Invoke-HetznerApi {
             Invoke-RestMethod -Uri "https://api.hetzner.cloud/v1$Uri" -Method $Method -Headers $Headers
         }
     } catch {
+        if ($_.Exception.Response.StatusCode -eq [System.Net.HttpStatusCode]::Unauthorized) {
+            Log-Warn "Authentication failed (401 Unauthorized). Removing invalid token..."
+            $global:HetznerToken = $null
+            if (Test-Path $ConfigFile) { Remove-Item $ConfigFile -Force }
+            
+            # Retry logic: ask for new token
+            Check-Token
+            
+            # Re-run the API call with new token (simple retry)
+            return Invoke-HetznerApi -Method $Method -Uri $Uri -Body $Body
+        }
+
         Log-Error "API Error: $($_.Exception.Message)"
         
         # PowerShell 7 (Core) vs Windows PowerShell (5.1) compatibility
