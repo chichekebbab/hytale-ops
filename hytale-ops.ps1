@@ -80,55 +80,62 @@ function Invoke-HetznerApi {
         "Content-Type"  = "application/json"
     }
     
+    $Url = "https://api.hetzner.cloud/v1$Uri"
+    $JsonBody = $null
+    if ($Body) {
+        $JsonBody = $Body | ConvertTo-Json -Depth 10
+    }
+
     try {
-        if ($Body) {
-            $JsonBody = $Body | ConvertTo-Json -Depth 10
-            Invoke-RestMethod -Uri "https://api.hetzner.cloud/v1$Uri" -Method $Method -Headers $Headers -Body $JsonBody
-        } else {
-            Invoke-RestMethod -Uri "https://api.hetzner.cloud/v1$Uri" -Method $Method -Headers $Headers
-        }
-    } catch {
-        # Capture error details immediately
-        $ErrorMessage = $_.Exception.Message
-        $ErrorContent = ""
+        # Use Invoke-WebRequest with SkipHttpErrorCheck (PS 7+) or catch manually
+        # To support both versions safely, we use try/catch but handle the error stream better
         
+        $Response = $null
+        if ($Body) {
+            $Response = Invoke-WebRequest -Uri $Url -Method $Method -Headers $Headers -Body $JsonBody -ErrorAction Stop
+        } else {
+            $Response = Invoke-WebRequest -Uri $Url -Method $Method -Headers $Headers -ErrorAction Stop
+        }
+        
+        # Parse output
+        return $Response.Content | ConvertFrom-Json
+    } catch {
+        # Catch 4xx/5xx errors
         if ($_.Exception.Response) {
-             # Read content based on PS version
-            if ($_.Exception.Response.GetType().Name -eq "HttpResponseMessage") {
-                # PowerShell Core / 7+ (HttpClient based)
-                # Need to read content before disposing
-                try {
-                    $ErrorContent = $_.Exception.Response.Content.ReadAsStringAsync().Result
-                } catch {
-                    $ErrorContent = "(Could not read error content)"
-                }
-            } elseif ($_.Exception.Response.GetResponseStream) {
-                # Windows PowerShell 5.1 (WebClient based)
-                $Stream = $_.Exception.Response.GetResponseStream()
+            $StatusCode = [int]$_.Exception.Response.StatusCode
+            
+            # Read error content reliably
+            $ErrorContent = ""
+            $Stream = $_.Exception.Response.GetResponseStream()
+            if ($Stream) {
                 $Reader = New-Object System.IO.StreamReader($Stream)
                 $ErrorContent = $Reader.ReadToEnd()
+                $Reader.Dispose() # Clean up
             }
-            
-            # Auto-retry on 401 Unauthorized
-            if ($_.Exception.Response.StatusCode -eq [System.Net.HttpStatusCode]::Unauthorized) {
+
+            # Handle 401 Unauthorized
+            if ($StatusCode -eq 401) {
                 Log-Warn "Authentication failed (401 Unauthorized). Removing invalid token..."
                 $global:HetznerToken = $null
                 if (Test-Path $ConfigFile) { Remove-Item $ConfigFile -Force }
-                
-                # Retry logic: ask for new token
                 Check-Token
-                
-                # Re-run the API call with new token (simple retry)
-                # Note: Recursion risk if new token also fails 401
                 return Invoke-HetznerApi -Method $Method -Uri $Uri -Body $Body
             }
-        }
 
-        Log-Error "API Error: $ErrorMessage"
-        if (-not [string]::IsNullOrEmpty($ErrorContent)) {
-            Write-Host $ErrorContent -ForegroundColor Red
+            Log-Error "API Error ($StatusCode): $($_.Exception.Message)"
+            if (-not [string]::IsNullOrEmpty($ErrorContent)) {
+                # Try to pretty print JSON error
+                try {
+                    $ErrorJson = $ErrorContent | ConvertFrom-Json
+                    Write-Host ($ErrorJson | ConvertTo-Json -Depth 5) -ForegroundColor Red
+                } catch {
+                    Write-Host $ErrorContent -ForegroundColor Red
+                }
+            }
+            exit 1
+        } else {
+            throw $_
         }
-        exit 1
     }
 }
 
