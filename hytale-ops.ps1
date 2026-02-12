@@ -189,6 +189,32 @@ function Deploy-Server {
         exit 1
     }
 
+    # Check/Upload SSH Key
+    Log-Info "Verifying SSH Key on Hetzner..."
+    $Keys = Invoke-HetznerApi -Uri "/ssh_keys?name=$SshKeyName"
+    
+    if ($Keys.ssh_keys.Count -eq 0) {
+        Log-Warn "SSH Key '$SshKeyName' not found on Hetzner."
+        
+        $PubPath = "$SshKeyPath.pub"
+        if (-not (Test-Path $PubPath)) {
+            Log-Error "Public key not found at $PubPath. Please generate one with 'ssh-keygen'."
+            exit 1
+        }
+        
+        Log-Info "Uploading local public key..."
+        $PubKeyContent = Get-Content $PubPath -Raw
+        $KeyBody = @{
+            name = $SshKeyName
+            public_key = $PubKeyContent
+        }
+        
+        Invoke-HetznerApi -Method "POST" -Uri "/ssh_keys" -Body $KeyBody
+        Log-Success "SSH Key uploaded successfully."
+    } else {
+        Log-Success "SSH Key '$SshKeyName' found on Hetzner."
+    }
+
     # Check existence
     $Existing = Invoke-HetznerApi -Uri "/servers?name=$ServerName"
     if ($Existing.servers.Count -gt 0) {
