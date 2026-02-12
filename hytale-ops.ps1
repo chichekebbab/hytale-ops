@@ -106,10 +106,18 @@ function Deploy-Server {
     Write-Host "`n  Select Location:" -ForegroundColor Gray
     Write-Host "  1) Nuremberg (nbg1)" -ForegroundColor White
     Write-Host "  2) Falkenstein (fsn1)" -ForegroundColor White
-    $LocChoice = Read-Host "  Choose [1-2]"
-    $Location = if ($LocChoice -eq "2") { "fsn1" } else { "nbg1" }
+    Write-Host "  3) Helsinki (hel1)" -ForegroundColor White
+    Write-Host "  4) Ashburn, VA (ash)" -ForegroundColor White
+    Write-Host "  5) Hillsboro, OR (hil)" -ForegroundColor White
+    $LocChoice = Read-Host "  Choose [1-5]"
+    
+    $Location = "nbg1"
+    if ($LocChoice -eq "2") { $Location = "fsn1" }
+    elseif ($LocChoice -eq "3") { $Location = "hel1" }
+    elseif ($LocChoice -eq "4") { $Location = "ash" }
+    elseif ($LocChoice -eq "5") { $Location = "hil" }
 
-    Log-Info "Deploying..."
+    Log-Info "Deploying $ServerName ($ServerType) in $Location..."
 
     # SSH Key Check
     if (-not (Test-Path $SshKeyPath)) { Log-Error "SSH key missing at $SshKeyPath"; exit 1 }
