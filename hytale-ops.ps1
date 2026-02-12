@@ -327,13 +327,14 @@ su - hytale -c 'cd /opt/hytale && ./hytale-downloader-linux-amd64 --auto-update'
 
 # 5. Extract Version Zip (Find the zip downloaded by the tool)
 cd /opt/hytale
-ZIP_FILE=\$(ls *.zip | grep -v 'hytale-downloader.zip' | head -n 1)
-if [ -z \"\$ZIP_FILE\" ]; then
+# Note: Backticks escape the $ sign so PowerShell sends literal $ to Linux
+ZIP_FILE=`$(ls *.zip | grep -v 'hytale-downloader.zip' | head -n 1)
+if [ -z "`$ZIP_FILE" ]; then
   echo 'Error: Game files zip not found!'
   exit 1
 fi
-echo \"Extracting \$ZIP_FILE...\"
-unzip -o -q \"\$ZIP_FILE\"
+echo "Extracting `$ZIP_FILE..."
+unzip -o -q "`$ZIP_FILE"
 chown -R hytale:hytale /opt/hytale
 
 # 6. Firewall
