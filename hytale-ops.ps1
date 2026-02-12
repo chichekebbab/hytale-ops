@@ -309,8 +309,12 @@ systemctl daemon-reload
 systemctl enable hytale
 "@ -replace "`r`n", "`n"
     
-    # Using ssh.exe directly
-    $RemoteScript | ssh -o StrictHostKeyChecking=no -i "$SshKeyPath" root@$ServerIp
+    # Encode script to Base64 to bypass PowerShell pipe encoding issues (CRLF)
+    $Bytes = [System.Text.Encoding]::UTF8.GetBytes($RemoteScript)
+    $B64 = [Convert]::ToBase64String($Bytes)
+    
+    # Send Base64 and decode on remote
+    ssh -o StrictHostKeyChecking=no -i "$SshKeyPath" root@$ServerIp "echo $B64 | base64 -d | bash"
 
     Write-Host "`n[OK] Deployment complete!" -ForegroundColor Green
     Write-Host "   Server Name: $ServerName" -ForegroundColor Yellow
