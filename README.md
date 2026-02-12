@@ -18,13 +18,13 @@ Unlike complex infrastructure-as-code tools, **Hytale Ops** is designed for spee
 
 ## Requirements
 
-- **Bash** (macOS, Linux, or WSL on Windows)
-- **curl** & **ssh** (standard on most systems)
-- **jq** (lightweight JSON processor - `apt install jq` or `brew install jq`)
+- **Linux / macOS:** `curl`, `ssh`, `jq` (standard or via package manager)
+- **Windows:** PowerShell 5.1+ or PowerShell Core (pwsh)
 - **Hetzner Cloud Token** (Read/Write) - [Get one here](https://console.hetzner.cloud/)
 
 ## Quick Start ⚡️
 
+### Linux / macOS (Bash)
 Run this one-liner to download and start the interactive tool:
 
 ```bash
@@ -34,22 +34,33 @@ chmod +x hytale-ops.sh
 ./hytale-ops.sh
 ```
 
+### Windows (PowerShell)
+Open PowerShell and run:
+
+```powershell
+git clone https://github.com/chichekebbab/hytale-ops.git
+cd hytale-ops
+.\hytale-ops.ps1
+```
+
+*Note: You might need to allow script execution first by running `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` if prompted.*
+
 ## Usage
 
 ### 1. Interactive Mode (Recommended)
 Just run the script without arguments. It will guide you through authentication, server selection, and deployment.
-```bash
-./hytale-ops.sh
-```
+
+**Bash:** `./hytale-ops.sh`  
+**PowerShell:** `.\hytale-ops.ps1`
 
 ### 2. Command Line Arguments
 For power users or automation:
 
-| Command | Description | Example |
-| :--- | :--- | :--- |
-| `deploy` | Create and setup a new server | `./hytale-ops.sh deploy my-server` |
-| `status` | Check IP, status, and type | `./hytale-ops.sh status my-server` |
-| `ssh` | Connect to the server console | `./hytale-ops.sh ssh my-server` |
+| Command | Description | Example (Bash) | Example (PowerShell) |
+| :--- | :--- | :--- | :--- |
+| `deploy` | Create and setup a new server | `./hytale-ops.sh deploy my-server` | `.\hytale-ops.ps1 -Command deploy -Name "my-server"` |
+| `status` | Check IP, status, and type | `./hytale-ops.sh status my-server` | `.\hytale-ops.ps1 -Command status -Name "my-server"` |
+| `ssh` | Connect to the server console | `./hytale-ops.sh ssh my-server` | `.\hytale-ops.ps1 -Command ssh -Name "my-server"` |
 
 ## Configuration
 
