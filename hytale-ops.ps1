@@ -92,10 +92,16 @@ function Deploy-Server {
     }
 
     Write-Host "`n  Available Plans:" -ForegroundColor Gray
-    Write-Host "  1) cx23   (2 vCPU / 4GB RAM)  ~5 EUR/mo (Recommended)" -ForegroundColor White
-    Write-Host "  2) cpx21  (3 vCPU / 4GB RAM)  ~8 EUR/mo" -ForegroundColor White
-    $TypeChoice = Read-Host "  Choose [1-2]"
-    $ServerType = if ($TypeChoice -eq "2") { "cpx21" } else { "cx23" }
+    Write-Host "  1) cx23   (2 vCPU / 4GB RAM)   ~5 EUR/mo   (~10 Players)" -ForegroundColor White
+    Write-Host "  2) cpx21  (3 vCPU / 4GB RAM)   ~8 EUR/mo   (~15 Players - Fast CPU)" -ForegroundColor White
+    Write-Host "  3) cpx31  (4 vCPU / 8GB RAM)   ~14 EUR/mo  (~30 Players)" -ForegroundColor White
+    Write-Host "  4) cpx41  (8 vCPU / 16GB RAM)  ~25 EUR/mo  (~60+ Players)" -ForegroundColor White
+    
+    $TypeChoice = Read-Host "  Choose [1-4]"
+    $ServerType = "cx23"
+    if ($TypeChoice -eq "2") { $ServerType = "cpx21" }
+    elseif ($TypeChoice -eq "3") { $ServerType = "cpx31" }
+    elseif ($TypeChoice -eq "4") { $ServerType = "cpx41" }
 
     Write-Host "`n  Select Location:" -ForegroundColor Gray
     Write-Host "  1) Nuremberg (nbg1)" -ForegroundColor White
