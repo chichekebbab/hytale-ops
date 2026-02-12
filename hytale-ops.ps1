@@ -283,37 +283,88 @@ function Deploy-Server {
     Log-Info "Configuring Hytale environment..."
     
     # Create Service File content
-    # Note: We enforce LF line endings for Linux compatibility
+    # Updated paths based on official doc (Server/HytaleServer.jar)
     $ServiceFile = @"
 [Unit]
-Description=Minecraft Server (Hytale Placeholder)
+Description=Hytale Dedicated Server
 After=network.target
 
 [Service]
 User=hytale
+Group=hytale
 WorkingDirectory=/opt/hytale
-ExecStart=/usr/bin/java -Xmx2G -Xms1G -jar server.jar nogui
+# Use system Java 25
+ExecStart=/usr/bin/java -Xms2G -Xmx3G -jar Server/HytaleServer.jar --assets Assets.zip
 Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
 "@ -replace "`r`n", "`n"
 
     # Remote Setup via SSH
-    # Note: We use a Here-String for the remote script and remove Windows CRLF
+    # Handles interactive auth flow
     $RemoteScript = @"
+# 1. Cleanup old tries
+systemctl stop hytale 2>/dev/null
+rm -rf /opt/hytale/*
+
+# 2. Prepare Environment
 mkdir -p /opt/hytale
 chown hytale:hytale /opt/hytale
 cd /opt/hytale
-# Download Minecraft 1.21.4 (Temporary Placeholder)
-wget -O server.jar https://piston-data.mojang.com/v1/objects/4707d00eb834b446575d89a61a11b5d548d8c001/server.jar
-echo 'eula=true' > eula.txt
+
+# 3. Download & Extract
+echo 'Downloading Hytale...'
+wget -q https://downloader.hytale.com/hytale-downloader.zip
+apt-get update -qq && apt-get install -y unzip
+unzip -o -q hytale-downloader.zip
+chmod +x hytale-downloader-linux-amd64
+
+# 4. Fetch Game Files
+echo 'Fetching Game Files (this takes time)...'
+su - hytale -c 'cd /opt/hytale && ./hytale-downloader-linux-amd64 --auto-update'
+
+# 5. Extract Version Zip (Find the zip downloaded by the tool)
+cd /opt/hytale
+ZIP_FILE=\$(ls *.zip | grep -v 'hytale-downloader.zip' | head -n 1)
+if [ -z \"\$ZIP_FILE\" ]; then
+  echo 'Error: Game files zip not found!'
+  exit 1
+fi
+echo \"Extracting \$ZIP_FILE...\"
+unzip -o -q \"\$ZIP_FILE\"
 chown -R hytale:hytale /opt/hytale
 
+# 6. Firewall
+ufw allow 5520/udp
+ufw allow 5520/tcp
+ufw --force enable
+
+# 7. Setup Service (but do not start yet)
 echo '$ServiceFile' > /etc/systemd/system/hytale.service
 systemctl daemon-reload
 systemctl enable hytale
+
+echo '-------------------------------------------------------'
+echo 'SETUP PAUSED: AUTHENTICATION REQUIRED'
+echo '1. The server will now start in INTERACTIVE mode.'
+echo '2. Look for a message like: /auth login device'
+echo '3. Type that command, get the code, authenticate on web.'
+echo '4. Then type: /auth persistence Encrypted'
+echo '5. Once done, type: stop (or press CTRL+C)'
+echo '6. The script will then finalize the background service.'
+echo '-------------------------------------------------------'
+read -p 'Press ENTER to start interactive authentication...'
+
+# Run server interactively as hytale user
+su - hytale -c 'cd /opt/hytale && java -Xms2G -Xmx3G -jar Server/HytaleServer.jar --assets Assets.zip'
+
+echo '-------------------------------------------------------'
+echo 'Authentication session finished.'
+echo 'Starting background service...'
 systemctl start hytale
+systemctl status hytale --no-pager
 "@ -replace "`r`n", "`n"
     
     # Encode script to Base64 to bypass PowerShell pipe encoding issues (CRLF)
